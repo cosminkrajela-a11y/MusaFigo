@@ -1,0 +1,389 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Reverse Line 104ki</title>
+<meta name="description" content="Layout 2D in scala della reverse line (tapparella ribaltata, linea AGV 104ki, VIN machine, FAZ) con export DXF per AutoCAD.">
+<style>
+:root{--bg:#f4f5f3;--panel:#ffffff;--ink:#1d2327;--mut:#5d676d;--line:#d5dad8;--acc:#1f5fa8;--paper:#ffffff;--warn:#b3261e;--ok:#21794a}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#15181a;--panel:#1d2124;--ink:#e6e9ea;--mut:#9aa4a9;--line:#323a3e;--acc:#6aa3e8;--paper:#101314;--warn:#f08a80;--ok:#6fd19a}}
+:root[data-theme="dark"]{--bg:#15181a;--panel:#1d2124;--ink:#e6e9ea;--mut:#9aa4a9;--line:#323a3e;--acc:#6aa3e8;--paper:#101314;--warn:#f08a80;--ok:#6fd19a}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:13px/1.35 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+#app{display:grid;grid-template-columns:330px 1fr;height:100vh}
+#side{background:var(--panel);border-right:1px solid var(--line);overflow:auto;padding:12px 14px 40px}
+#side h1{font-size:16px;margin:0 0 2px}
+#side .sub{color:var(--mut);margin:0 0 10px;font-size:12px}
+details{border-top:1px solid var(--line);padding:6px 0}
+summary{cursor:pointer;font-weight:600;padding:3px 0}
+.row{display:grid;grid-template-columns:1fr 84px;gap:6px;align-items:center;margin:3px 0}
+.row label{color:var(--mut);font-size:12px}
+.row input{width:100%;padding:3px 5px;border:1px solid var(--line);border-radius:5px;background:var(--bg);color:var(--ink);font:inherit;text-align:right}
+.btns{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+button{font:inherit;padding:6px 10px;border-radius:6px;border:1px solid var(--line);background:var(--bg);color:var(--ink);cursor:pointer}
+button.pri{background:var(--acc);border-color:var(--acc);color:#fff}
+.lay{display:grid;grid-template-columns:1fr 1fr;gap:2px 8px}
+.lay label{display:flex;gap:6px;align-items:center;font-size:12px}
+.sw{width:10px;height:10px;border-radius:2px;display:inline-block}
+table{border-collapse:collapse;width:100%;font-size:12px}
+td{padding:2px 4px;border-bottom:1px solid var(--line)}
+td:last-child{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.warn{color:var(--warn);font-size:12px;margin:4px 0}
+.okm{color:var(--ok);font-size:12px;margin:4px 0}
+#main{position:relative;overflow:hidden;background:var(--paper)}
+#svg{width:100%;height:100%;display:block;touch-action:none;cursor:grab}
+#svg.drag{cursor:grabbing}
+#hud{position:absolute;left:10px;bottom:10px;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:4px 8px;font-size:12px;color:var(--mut);font-variant-numeric:tabular-nums}
+#tools{position:absolute;right:10px;top:10px;display:flex;gap:6px}
+#tip{position:absolute;pointer-events:none;background:var(--panel);border:1px solid var(--line);border-radius:5px;padding:3px 7px;font-size:12px;display:none;white-space:nowrap}
+@media (max-width:820px){#app{grid-template-columns:1fr;grid-template-rows:auto 70vh;height:auto}#side{max-height:none;border-right:0;border-bottom:1px solid var(--line)}}
+@media print{#side,#tools,#hud{display:none}#app{display:block}#main{height:100vh}}
+</style>
+</head>
+<body>
+<div id="app">
+<aside id="side">
+  <h1>Reverse Line · 104ki</h1>
+  <p class="sub">Pianta in scala (metri). Origine e misure del V35, con tapparella ribaltata, linea AGV, VIN machine e FAZ invertita.</p>
+  <div class="btns">
+    <button class="pri" id="bDxf">Esporta DXF (AutoCAD)</button>
+    <button id="bSvg">Esporta SVG</button>
+    <button id="bReset">Valori iniziali</button>
+  </div>
+  <details open><summary>Riepilogo</summary><div id="sum"></div></details>
+  <details open><summary>Layer</summary><div class="lay" id="layers"></div></details>
+  <div id="params"></div>
+</aside>
+<main id="main">
+  <svg id="svg" xmlns="http://www.w3.org/2000/svg"></svg>
+  <div id="tools"><button id="bFit">Adatta</button><button id="bTheme">Tema</button></div>
+  <div id="hud">x — · y —</div>
+  <div id="tip"></div>
+</main>
+</div>
+<script>
+'use strict';
+/* ====== contesto fisso estratto da Honda CoPlan V35 (coordinate in metri, x verso destra, y verso il basso) ======
+   m:1 = elementi della FAZ: vengono ribaltati in x (la FAZ ora scorre come la tapparella, da sinistra a destra). */
+const CTX=[{"t":"pcrane","x":105.71,"y":42.44,"w":5.01,"h":7,"l":"Paranco sub-assy","g":"SubF","m":1},{"t":"sabench","x":107.61,"y":42.09,"w":1,"h":2.4,"l":"Press frame","g":"SubF","m":1},{"t":"press","x":104.88,"y":41.94,"w":2.41,"h":0.84,"l":"Pressa","g":"SubF","m":1},{"t":"marker","x":106.21,"y":44.39,"w":0.6,"h":2.6,"l":"Marcatrice","g":"SubF","m":1},{"t":"sabench","x":107.61,"y":46.14,"w":1,"h":1.7,"l":"Fuel tank sub-assy","g":"SubF","m":1},{"t":"operator","x":106.66,"y":46.14,"w":0.8,"h":0.8,"g":"SubF","m":1},{"t":"sconv","x":109.71,"y":43.84,"w":7,"h":0.8,"r":90,"l":"Sub-assy 1 \u00b7 trasportatore","g":"SubF","m":1},{"t":"operator","x":110.51,"y":42.84,"w":0.8,"h":0.8,"r":180,"g":"SubF","m":1},{"t":"operator","x":108.91,"y":45.04,"w":0.8,"h":0.8,"g":"SubF","m":1},{"t":"sconv","x":117.71,"y":43.84,"w":7,"h":0.8,"r":90,"l":"Sub-assy 2 \u00b7 trasportatore","g":"SubF","m":1},{"t":"operator","x":118.51,"y":42.84,"w":0.8,"h":0.8,"r":180,"g":"SubF","m":1},{"t":"operator","x":116.91,"y":45.04,"w":0.8,"h":0.8,"g":"SubF","m":1},{"t":"zone","x":111.36,"y":42.44,"w":16.7,"h":10,"l":"Sub-assy FAZ","f":"none","g":"SubF","m":1},{"t":"jib","x":96.71,"y":39.24,"w":0.3,"h":0.3,"l":"Braccio INDEVA","g":"L1","m":1},{"t":"mrail","x":92.11,"y":42.44,"w":4.2,"h":5.4,"l":"Monorotaia","pts":[[-1.95,-2.6],[-1.95,-0.6],[-1.2,0.9],[0.4,2.3],[2.05,2.5]],"g":"L1","m":1},{"t":"path","x":90.01,"y":46.04,"w":24.6,"h":9.1,"l":"FAZ line \u00b7 L1","pts":[[12.3,3.6],[12.3,-5.5],[10.6,-5.5],[10.6,-3.6],[-11.45,-3.6],[-11.95,-4.05],[-12.3,-2.6],[-12.3,3.6]],"g":"L1","m":1},{"t":"zone","x":90.01,"y":49.64,"w":24.6,"h":0.8,"f":"guida","g":"L1","m":1},{"t":"station","x":98.21,"y":42.44,"w":3,"h":10,"st":"L1-01","g":"L1","m":1},{"t":"operator","x":98.21,"y":41.29,"w":0.8,"h":0.8,"r":90,"st":"L1-01S","g":"L1","m":1},{"t":"operator","x":98.21,"y":43.59,"w":0.8,"h":0.8,"r":270,"st":"L1-01D","g":"L1","m":1},{"t":"gantry","x":96.71,"y":42.44,"w":6,"h":2.2,"g":"L1","m":1},{"t":"station","x":95.21,"y":42.44,"w":3,"h":10,"st":"L1-02","g":"L1","m":1},{"t":"operator","x":95.21,"y":41.29,"w":0.8,"h":0.8,"r":90,"st":"L1-02S","g":"L1","m":1},{"t":"operator","x":95.21,"y":43.59,"w":0.8,"h":0.8,"r":270,"st":"L1-02D","g":"L1","m":1},{"t":"box","x":95.21,"y":38.54,"w":1.2,"h":1,"g":"L1","m":1},{"t":"station","x":92.21,"y":42.44,"w":3,"h":10,"st":"L1-03","g":"L1","m":1},{"t":"operator","x":92.21,"y":41.29,"w":0.8,"h":0.8,"r":90,"st":"L1-03S","g":"L1","m":1},{"t":"operator","x":92.21,"y":43.59,"w":0.8,"h":0.8,"r":270,"st":"L1-03D","g":"L1","m":1},{"t":"gantry","x":90.71,"y":42.44,"w":6,"h":2.2,"g":"L1","m":1},{"t":"station","x":89.21,"y":42.44,"w":3,"h":10,"st":"L1-04","g":"L1","m":1},{"t":"operator","x":89.21,"y":41.29,"w":0.8,"h":0.8,"r":90,"st":"L1-04S","g":"L1","m":1},{"t":"operator","x":89.21,"y":43.59,"w":0.8,"h":0.8,"r":270,"st":"L1-04D","g":"L1","m":1},{"t":"box","x":89.21,"y":46.34,"w":1.2,"h":1,"g":"L1","m":1},{"t":"station","x":86.21,"y":42.44,"w":3,"h":10,"st":"L1-05","g":"L1","m":1},{"t":"operator","x":86.21,"y":41.29,"w":0.8,"h":0.8,"r":90,"st":"L1-05S","g":"L1","m":1},{"t":"operator","x":86.21,"y":43.59,"w":0.8,"h":0.8,"r":270,"st":"L1-05D","g":"L1","m":1},{"t":"gantry","x":84.71,"y":42.44,"w":6,"h":2.2,"g":"L1","m":1},{"t":"station","x":83.21,"y":42.44,"w":3,"h":10,"st":"L1-06","g":"L1","m":1},{"t":"operator","x":83.21,"y":41.29,"w":0.8,"h":0.8,"r":90,"st":"L1-06S","g":"L1","m":1},{"t":"operator","x":83.21,"y":43.59,"w":0.8,"h":0.8,"r":270,"st":"L1-06D","g":"L1","m":1},{"t":"box","x":83.21,"y":38.54,"w":1.2,"h":1,"g":"L1","m":1},{"t":"station","x":80.21,"y":42.44,"w":3,"h":10,"st":"L1-07","g":"L1","m":1},{"t":"operator","x":80.21,"y":41.29,"w":0.8,"h":0.8,"r":90,"st":"L1-07S","g":"L1","m":1},{"t":"operator","x":80.21,"y":43.59,"w":0.8,"h":0.8,"r":270,"st":"L1-07D","g":"L1","m":1},{"t":"gantry","x":80.21,"y":42.44,"w":3,"h":2.2,"g":"L1","m":1},{"t":"zone","x":76.21,"y":42.44,"w":5,"h":9,"l":"Trasferimento L1 \u2192 L2","f":"none","g":"L1","m":1},{"t":"crane","x":76.21,"y":42.44,"w":9.4,"h":5,"r":180,"g":"L1","m":1},{"t":"path","x":54.71,"y":48.365,"w":43.2,"h":13.75,"l":"FAZ line \u00b7 L2","pts":[[21.6,5.925],[21.6,-7.825],[19.9,-7.825],[19.9,-5.925],[-20.15,-5.925],[-21.25,-6.375],[-21.6,-4.925],[-21.6,5.925]],"g":"L2","m":1},{"t":"zone","x":54.71,"y":54.29,"w":43.2,"h":0.8,"f":"guida","g":"L2","m":1},{"t":"station","x":72.21,"y":42.44,"w":3,"h":10,"st":"L2-01","g":"L2","m":1},{"t":"operator","x":72.21,"y":41.29,"w":0.8,"h":0.8,"r":90,"st":"L2-01S","g":"L2","m":1},{"t":"operator","x":72.21,"y":43.59,"w":0.8,"h":0.8,"r":270,"st":"L2-01D","g":"L2","m":1},{"t":"gantry","x":70.71,"y":42.44,"w":6,"h":2.2,"g":"L2","m":1},{"t":"station","x":69.21,"y":42.44,"w":3,"h":10,"st":"L2-02","g":"L2","m":1},{"t":"operator","x":69.21,"y":41.29,"w":0.8,"h":0.8,"r":90,"st":"L2-02S","g":"L2","m":1},{"t":"operator","x":69.21,"y":43.59,"w":0.8,"h":0.8,"r":270,"st":"L2-02D","g":"L2","m":1},{"t":"box","x":69.21,"y":38.54,"w":1.2,"h":1,"g":"L2","m":1},{"t":"station","x":66.21,"y":42.44,"w":3,"h":10,"st":"L2-03","g":"L2","m":1},{"t":"operator","x":66.21,"y":41.29,"w":0.8,"h":0.8,"r":90,"st":"L2-03S","g":"L2","m":1},{"t":"operator","x":66.21,"y":43.59,"w":0.8,"h":0.8,"r":270,"st":"L2-03D","g":"L2","m":1},{"t":"gantry","x":64.71,"y":42.44,"w":6,"h":2.2,"g":"L2","m":1},{"t":"station","x":63.21,"y":42.44,"w":3,"h":10,"st":"L2-04","g":"L2","m":1},{"t":"operator","x":63.21,"y":41.29,"w":0.8,"h":0.8,"r":90,"st":"L2-04S","g":"L2","m":1},{"t":"operator","x":63.21,"y":43.59,"w":0.8,"h":0.8,"r":270,"st":"L2-04D","g":"L2","m":1},{"t":"box","x":63.21,"y":46.34,"w":1.2,"h":1,"g":"L2","m":1},{"t":"station","x":60.21,"y":42.44,"w":3,"h":10,"st":"L2-05","g":"L2","m":1},{"t":"operator","x":60.21,"y":41.29,"w":0.8,"h":0.8,"r":90,"st":"L2-05S","g":"L2","m":1},{"t":"operator","x":60.21,"y":43.59,"w":0.8,"h":0.8,"r":270,"st":"L2-05D","g":"L2","m":1},{"t":"gantry","x":58.71,"y":42.44,"w":6,"h":2.2,"g":"L2","m":1},{"t":"station","x":57.21,"y":42.44,"w":3,"h":10,"st":"L2-06","g":"L2","m":1},{"t":"operator","x":57.21,"y":41.29,"w":0.8,"h":0.8,"r":90,"st":"L2-06S","g":"L2","m":1},{"t":"operator","x":57.21,"y":43.59,"w":0.8,"h":0.8,"r":270,"st":"L2-06D","g":"L2","m":1},{"t":"box","x":57.21,"y":38.54,"w":1.2,"h":1,"g":"L2","m":1},{"t":"station","x":54.21,"y":42.44,"w":3,"h":10,"st":"L2-07","g":"L2","m":1},{"t":"operator","x":54.21,"y":41.29,"w":0.8,"h":0.8,"r":90,"st":"L2-07S","g":"L2","m":1},{"t":"operator","x":54.21,"y":43.59,"w":0.8,"h":0.8,"r":270,"st":"L2-07D","g":"L2","m":1},{"t":"gantry","x":52.71,"y":42.44,"w":6,"h":2.2,"g":"L2","m":1},{"t":"station","x":51.21,"y":42.44,"w":3,"h":10,"st":"L2-08","g":"L2","m":1},{"t":"operator","x":51.21,"y":41.29,"w":0.8,"h":0.8,"r":90,"st":"L2-08S","g":"L2","m":1},{"t":"operator","x":51.21,"y":43.59,"w":0.8,"h":0.8,"r":270,"st":"L2-08D","g":"L2","m":1},{"t":"box","x":51.21,"y":46.34,"w":1.2,"h":1,"g":"L2","m":1},{"t":"station","x":48.21,"y":42.44,"w":3,"h":10,"st":"L2-09","g":"L2","m":1},{"t":"operator","x":48.21,"y":41.29,"w":0.8,"h":0.8,"r":90,"st":"L2-09S","g":"L2","m":1},{"t":"operator","x":48.21,"y":43.59,"w":0.8,"h":0.8,"r":270,"st":"L2-09D","g":"L2","m":1},{"t":"gantry","x":46.71,"y":42.44,"w":6,"h":2.2,"g":"L2","m":1},{"t":"station","x":45.21,"y":42.44,"w":3,"h":10,"st":"L2-10","g":"L2","m":1},{"t":"operator","x":45.21,"y":41.29,"w":0.8,"h":0.8,"r":90,"st":"L2-10S","g":"L2","m":1},{"t":"operator","x":45.21,"y":43.59,"w":0.8,"h":0.8,"r":270,"st":"L2-10D","g":"L2","m":1},{"t":"box","x":45.21,"y":38.54,"w":1.2,"h":1,"g":"L2","m":1},{"t":"station","x":42.21,"y":42.44,"w":3,"h":10,"st":"L2-11","g":"L2","m":1},{"t":"operator","x":42.21,"y":41.29,"w":0.8,"h":0.8,"r":90,"st":"L2-11S","g":"L2","m":1},{"t":"operator","x":42.21,"y":43.59,"w":0.8,"h":0.8,"r":270,"st":"L2-11D","g":"L2","m":1},{"t":"gantry","x":40.71,"y":42.44,"w":6,"h":2.2,"g":"L2","m":1},{"t":"station","x":39.21,"y":42.44,"w":3,"h":10,"st":"L2-12","g":"L2","m":1},{"t":"operator","x":39.21,"y":41.29,"w":0.8,"h":0.8,"r":90,"st":"L2-12S","g":"L2","m":1},{"t":"operator","x":39.21,"y":43.59,"w":0.8,"h":0.8,"r":270,"st":"L2-12D","g":"L2","m":1},{"t":"box","x":39.21,"y":46.34,"w":1.2,"h":1,"g":"L2","m":1},{"t":"station","x":36.21,"y":42.44,"w":3,"h":10,"st":"L2-13","g":"L2","m":1},{"t":"operator","x":36.21,"y":41.29,"w":0.8,"h":0.8,"r":90,"st":"L2-13S","g":"L2","m":1},{"t":"operator","x":36.21,"y":43.59,"w":0.8,"h":0.8,"r":270,"st":"L2-13D","g":"L2","m":1},{"t":"gantry","x":36.21,"y":42.44,"w":3,"h":2.2,"g":"L2","m":1},{"t":"filler","x":67.11,"y":39.14,"w":0.9,"h":3,"r":180,"l":"Water cooling MC","g":"L2","m":1},{"t":"filler","x":61.11,"y":39.14,"w":0.9,"h":3,"r":180,"l":"Brake MC","g":"L2","m":1},{"t":"zone","x":67.71,"y":42.44,"w":69.2,"h":10,"l":"FAZ line","f":"none","g":"L2","m":1},{"t":"oven","x":92.01,"y":52.49,"w":27.8,"h":3.7,"l":"Dry oven","g":"Struttura","m":1},{"t":"zone","x":30.71,"y":40.94,"w":6.4,"h":7.2,"l":"Scarico moto","f":"none","g":"Scarico","m":1},{"t":"unload2","x":34.71,"y":42.44,"w":9,"h":6,"r":180,"l":"Scarico moto FAZ","g":"Scarico","m":1},{"t":"moto","x":27.01,"y":38.99,"w":2,"h":0.8,"r":90,"g":"Scarico","m":1},{"t":"moto","x":27.96,"y":38.99,"w":2,"h":0.8,"r":90,"g":"Scarico","m":1},{"t":"moto","x":28.91,"y":38.99,"w":2,"h":0.8,"r":90,"g":"Scarico","m":1},{"t":"moto","x":29.86,"y":38.99,"w":2,"h":0.8,"r":90,"g":"Scarico","m":1},{"t":"bench","x":30.91,"y":39.04,"w":1.2,"h":0.7,"r":180,"g":"Scarico","m":1},{"t":"operator","x":30.91,"y":39.79,"w":0.8,"h":0.8,"r":270,"g":"Scarico","m":1},{"t":"mlift","x":29.91,"y":48.49,"w":2.8,"h":0.7,"r":90,"g":"Scarico","m":1},{"t":"operator","x":30.76,"y":48.49,"w":0.8,"h":0.8,"r":180,"g":"Scarico","m":1},{"t":"tbench","x":28.11,"y":49.34,"w":1.8,"h":0.8,"r":90,"g":"Scarico","m":1},{"t":"oven","x":26.6,"y":78.5,"w":46.4,"h":0.3,"r":90,"g":"Struttura"},{"t":"pdca","x":38.25,"y":14.7,"w":3.8,"h":4.2,"l":"PDCA corner","g":"Ripar"},{"t":"zone","x":40.85,"y":14.7,"w":1.4,"h":4.2,"l":"Buffer","f":"none","g":"Ripar"},{"t":"modula","x":38.2,"y":10.5,"w":3.3,"h":3.6,"l":"Modula","g":"Ripar"},{"t":"modula","x":38.2,"y":6.9,"w":3.3,"h":3.6,"g":"Ripar"},{"t":"bench","x":38.2,"y":3.5,"w":1,"h":0.7,"r":180,"l":"Stampante","g":"Ripar"},{"t":"locker","x":41.83,"y":9.9,"w":0.5,"h":13.8,"l":"Armadietti","g":"Ripar"},{"t":"zone","x":42.58,"y":9.9,"w":1,"h":13.8,"f":"pedonale","g":"Logistica"},{"t":"locker","x":43.33,"y":9.9,"w":0.5,"h":13.8,"r":180,"g":"Ripar"},{"t":"zone","x":47.455,"y":9.9,"w":7.75,"h":13.8,"l":"Sub-assy frame","f":"blu","g":"SubFrame"},{"t":"sign","x":47.455,"y":9.9,"w":3.2,"h":0.1,"l":"SUB ASSY FRAME","g":"SubFrame"},{"t":"prack","x":44.58,"y":3.9,"w":1.35,"h":1.2,"r":180,"l":"Plastiche in arrivo \u00b7 K1W","g":"SubFrame"},{"t":"prack","x":46.08,"y":3.9,"w":1.35,"h":1.2,"r":180,"g":"SubFrame"},{"t":"prack","x":47.68,"y":3.9,"w":1.35,"h":1.2,"r":180,"g":"SubFrame"},{"t":"prack","x":49.18,"y":3.9,"w":1.35,"h":1.2,"r":180,"g":"SubFrame"},{"t":"prack","x":50.58,"y":3.9,"w":1.35,"h":1.2,"r":180,"g":"SubFrame"},{"t":"prack","x":45.38,"y":5.65,"w":1.35,"h":1.1,"r":180,"g":"SubFrame"},{"t":"prack","x":47.68,"y":5.65,"w":1.35,"h":1.1,"r":180,"g":"SubFrame"},{"t":"prack","x":49.18,"y":5.65,"w":1.35,"h":1.1,"r":180,"g":"SubFrame"},{"t":"prack","x":50.58,"y":5.65,"w":1.35,"h":1.1,"r":180,"g":"SubFrame"},{"t":"bench","x":43.98,"y":5.65,"w":0.6,"h":1.2,"r":180,"l":"Jig","g":"SubFrame"},{"t":"carousel","x":46.78,"y":10.5,"w":3,"h":1.7,"r":90,"l":"Banco rotante","g":"SubFrame"},{"t":"pcart","x":45.28,"y":8,"w":0.9,"h":1.4,"r":180,"g":"SubFrame"},{"t":"pcart","x":48.38,"y":7.5,"w":0.9,"h":1.4,"r":180,"g":"SubFrame"},{"t":"pcart","x":49.88,"y":7.6,"w":0.9,"h":1.4,"r":180,"g":"SubFrame"},{"t":"pcart","x":49.98,"y":9.4,"w":0.9,"h":1.4,"r":180,"g":"SubFrame"},{"t":"pcart","x":45.28,"y":12.5,"w":0.9,"h":1.4,"r":180,"g":"SubFrame"},{"t":"pcart","x":45.28,"y":14.1,"w":0.9,"h":1.4,"r":180,"g":"SubFrame"},{"t":"pcart","x":46.18,"y":15.7,"w":0.9,"h":1.4,"r":180,"g":"SubFrame"},{"t":"pcart","x":47.18,"y":15.7,"w":0.9,"h":1.4,"r":180,"g":"SubFrame"},{"t":"pcart","x":48.18,"y":15.7,"w":0.9,"h":1.4,"r":180,"g":"SubFrame"},{"t":"tbench","x":48.68,"y":12.9,"w":1,"h":0.6,"r":180,"l":"Tavolino","g":"SubFrame"},{"t":"tbench","x":50.48,"y":15.4,"w":1,"h":0.6,"r":180,"g":"SubFrame"},{"t":"operator","x":44.48,"y":10.5,"w":0.8,"h":0.8,"l":"S5C","g":"SubFrame"},{"t":"operator","x":48.48,"y":11.4,"w":0.8,"h":0.8,"r":180,"l":"S5A","g":"SubFrame"},{"t":"operator","x":46.78,"y":8.45,"w":0.8,"h":0.8,"r":90,"l":"S5B","g":"SubFrame"},{"t":"zone","x":52.33,"y":9.9,"w":13.8,"h":2,"r":90,"f":"verde","g":"Logistica"},{"t":"zone","x":65.58,"y":10.3,"w":24.5,"h":13,"l":"Minilinea sub assy frame plastiche","f":"blu","g":"MiniSA"},{"t":"sign","x":59.83,"y":12.5,"w":3.6,"h":0.1,"l":"ASSY FRAME \u00b7 SUB ASSY","g":"MiniSA"},{"t":"ploop","x":59.83,"y":9.8,"w":9,"h":2.2,"l":"Minilinea S1","g":"MiniSA"},{"t":"operator","x":56.83,"y":8.15,"w":0.8,"h":0.8,"r":90,"l":"S1A","g":"MiniSA"},{"t":"operator","x":62.13,"y":8.15,"w":0.8,"h":0.8,"r":90,"l":"S1B","g":"MiniSA"},{"t":"operator","x":64.88,"y":9.8,"w":0.8,"h":0.8,"l":"S1C","g":"MiniSA"},{"t":"operator","x":62.53,"y":11.45,"w":0.8,"h":0.8,"r":270,"l":"S1D","g":"MiniSA"},{"t":"operator","x":59.83,"y":11.45,"w":0.8,"h":0.8,"r":270,"l":"S1E","g":"MiniSA"},{"t":"operator","x":57.13,"y":11.45,"w":0.8,"h":0.8,"r":270,"l":"S1F","g":"MiniSA"},{"t":"operator","x":54.78,"y":9.8,"w":0.8,"h":0.8,"r":180,"l":"S1G","g":"MiniSA"},{"t":"pcart","x":55.33,"y":15.6,"w":1.3,"h":0.9,"r":180,"g":"MiniSA"},{"t":"box","x":57.43,"y":15.6,"w":1.2,"h":0.9,"g":"MiniSA"},{"t":"pcart","x":59.63,"y":15.6,"w":1.3,"h":0.9,"r":180,"g":"MiniSA"},{"t":"box","x":61.73,"y":15.6,"w":1.2,"h":0.9,"g":"MiniSA"},{"t":"pcart","x":63.73,"y":15.6,"w":1.3,"h":0.9,"r":180,"g":"MiniSA"},{"t":"box","x":54.93,"y":4.9,"w":1.1,"h":0.8,"g":"MiniSA"},{"t":"box","x":56.93,"y":4.9,"w":1.1,"h":0.8,"g":"MiniSA"},{"t":"bench","x":58.93,"y":4.9,"w":1.2,"h":0.7,"r":180,"l":"Banco","g":"MiniSA"},{"t":"box","x":60.73,"y":4.9,"w":1.1,"h":0.8,"g":"MiniSA"},{"t":"box","x":62.73,"y":4.9,"w":1.1,"h":0.8,"g":"MiniSA"},{"t":"box","x":53.93,"y":13.8,"w":0.8,"h":1,"g":"MiniSA"},{"t":"box","x":53.93,"y":7.3,"w":0.8,"h":1,"g":"MiniSA"},{"t":"tbench","x":63.93,"y":6.4,"w":1.2,"h":0.6,"r":180,"g":"MiniSA"},{"t":"prack","x":66.13,"y":14.6,"w":1.3,"h":0.8,"r":90,"g":"MiniSA"},{"t":"prack","x":66.13,"y":13,"w":1.3,"h":0.8,"r":90,"g":"MiniSA"},{"t":"prack","x":66.13,"y":11.4,"w":1.3,"h":0.8,"r":90,"g":"MiniSA"},{"t":"prack","x":66.13,"y":8.4,"w":1.3,"h":0.8,"r":90,"g":"MiniSA"},{"t":"prack","x":66.13,"y":6.8,"w":1.3,"h":0.8,"r":90,"g":"MiniSA"},{"t":"tbench","x":68.93,"y":8.4,"w":1.9,"h":0.8,"r":90,"l":"S3A","g":"MiniSA"},{"t":"operator","x":67.98,"y":8.4,"w":0.8,"h":0.8,"g":"MiniSA"},{"t":"tbench","x":68.93,"y":10.4,"w":1.9,"h":0.8,"r":90,"l":"S3B","g":"MiniSA"},{"t":"operator","x":67.98,"y":10.4,"w":0.8,"h":0.8,"g":"MiniSA"},{"t":"tbench","x":68.93,"y":12.4,"w":1.9,"h":0.8,"r":90,"l":"S3C","g":"MiniSA"},{"t":"operator","x":67.98,"y":12.4,"w":0.8,"h":0.8,"g":"MiniSA"},{"t":"tbench","x":69.93,"y":9.4,"w":1.9,"h":0.8,"r":90,"l":"S3E","g":"MiniSA"},{"t":"operator","x":70.88,"y":9.4,"w":0.8,"h":0.8,"r":180,"g":"MiniSA"},{"t":"tbench","x":69.93,"y":11.4,"w":1.9,"h":0.8,"r":90,"l":"S3D","g":"MiniSA"},{"t":"operator","x":70.88,"y":11.4,"w":0.8,"h":0.8,"r":180,"g":"MiniSA"},{"t":"box","x":67.73,"y":5.2,"w":1.1,"h":0.9,"g":"MiniSA"},{"t":"box","x":70.93,"y":5.2,"w":1.1,"h":0.9,"g":"MiniSA"},{"t":"box","x":68.13,"y":15.4,"w":1.1,"h":1,"g":"MiniSA"},{"t":"box","x":71.93,"y":15.4,"w":1.1,"h":1,"g":"MiniSA"},{"t":"pcart","x":72.93,"y":7.4,"w":1.3,"h":0.9,"r":180,"g":"MiniSA"},{"t":"track","x":75.88,"y":6.7,"w":1.4,"h":1.4,"r":180,"l":"Gomme R","g":"MiniSA"},{"t":"track","x":77.28,"y":6.7,"w":1.4,"h":1.4,"r":180,"l":"Gomme F","g":"MiniSA"},{"t":"track","x":75.88,"y":8.15,"w":1.4,"h":1.4,"r":180,"g":"MiniSA"},{"t":"track","x":77.28,"y":8.15,"w":1.4,"h":1.4,"r":180,"g":"MiniSA"},{"t":"track","x":75.88,"y":9.6,"w":1.4,"h":1.4,"r":180,"g":"MiniSA"},{"t":"track","x":77.28,"y":9.6,"w":1.4,"h":1.4,"r":180,"g":"MiniSA"},{"t":"track","x":75.88,"y":11.05,"w":1.4,"h":1.4,"r":180,"g":"MiniSA"},{"t":"track","x":77.28,"y":11.05,"w":1.4,"h":1.4,"r":180,"g":"MiniSA"},{"t":"track","x":75.88,"y":12.5,"w":1.4,"h":1.4,"r":180,"g":"MiniSA"},{"t":"track","x":77.28,"y":12.5,"w":1.4,"h":1.4,"r":180,"g":"MiniSA"},{"t":"track","x":75.88,"y":13.95,"w":1.4,"h":1.4,"r":180,"g":"MiniSA"},{"t":"track","x":77.28,"y":13.95,"w":1.4,"h":1.4,"r":180,"g":"MiniSA"},{"t":"box","x":75.88,"y":15.45,"w":1.3,"h":1.2,"g":"MiniSA"},{"t":"box","x":77.28,"y":15.45,"w":1.3,"h":1.2,"g":"MiniSA"},{"t":"zone","x":93.83,"y":10.8,"w":24,"h":12,"l":"Subassy frame wheel robot cells","f":"blu","g":"WRC"},{"t":"zone","x":79.83,"y":10.3,"w":9,"h":13,"f":"verde","g":"Logistica"},{"t":"zone","x":106.83,"y":10.725,"w":7,"h":12.15,"f":"verde","g":"Logistica"},{"t":"wrcell","x":93.83,"y":10.8,"w":12,"h":9,"l":"Wheel robot cells","g":"WRC"},{"t":"sign","x":93.83,"y":15.8,"w":4.2,"h":0.1,"l":"SUBASSY FRAME WHEEL ROBOT CELLS","g":"WRC"},{"t":"wbench","x":82.98,"y":10.6,"w":2.1,"h":1,"r":180,"l":"Banco PC","g":"WRC"},{"t":"wbench","x":82.73,"y":8,"w":2.1,"h":1,"r":90,"g":"WRC"},{"t":"wbench","x":82.73,"y":13.4,"w":2.1,"h":1,"r":90,"g":"WRC"},{"t":"tbench","x":85.23,"y":11.8,"w":1.2,"h":0.6,"r":180,"g":"WRC"},{"t":"redcab","x":86.63,"y":8.7,"w":1.2,"h":0.8,"r":180,"l":"Banchi rossi","g":"WRC"},{"t":"redrack","x":86.43,"y":7.5,"w":1.2,"h":0.8,"r":180,"g":"WRC"},{"t":"tchanger","x":84.43,"y":6.8,"w":0.9,"h":0.9,"r":180,"g":"WRC"},{"t":"balancer","x":85.73,"y":5.6,"w":0.9,"h":0.8,"r":180,"l":"Equilibratrice","g":"WRC"},{"t":"operator","x":84.03,"y":9.6,"w":0.8,"h":0.8,"r":90,"g":"WRC"},{"t":"operator","x":83.73,"y":13.4,"w":0.8,"h":0.8,"r":180,"g":"WRC"},{"t":"operator","x":83.83,"y":7.6,"w":0.8,"h":0.8,"r":180,"g":"WRC"},{"t":"operator","x":87.23,"y":14.2,"w":0.8,"h":0.8,"r":270,"g":"WRC"},{"t":"box","x":85.63,"y":14.4,"w":1.4,"h":1,"l":"Cassa cerchi","g":"WRC"},{"t":"box","x":85.63,"y":15.9,"w":1.4,"h":1,"g":"WRC"},{"t":"box","x":87.23,"y":15.9,"w":1.4,"h":1,"l":"CBOX waste","g":"WRC"},{"t":"track","x":102.13,"y":15.8,"w":1.4,"h":1.4,"r":180,"l":"Stock","g":"WRC"},{"t":"track","x":102.13,"y":14.4,"w":1.4,"h":1.4,"r":180,"g":"WRC"},{"t":"track","x":102.13,"y":13,"w":1.4,"h":1.4,"r":180,"g":"WRC"},{"t":"track","x":102.13,"y":11.6,"w":1.4,"h":1.4,"r":180,"g":"WRC"},{"t":"track","x":103.53,"y":15.8,"w":1.4,"h":1.4,"r":180,"g":"WRC"},{"t":"track","x":103.53,"y":14.4,"w":1.4,"h":1.4,"r":180,"g":"WRC"},{"t":"track","x":103.53,"y":13,"w":1.4,"h":1.4,"r":180,"g":"WRC"},{"t":"track","x":103.53,"y":11.6,"w":1.4,"h":1.4,"r":180,"g":"WRC"},{"t":"track","x":104.93,"y":15.8,"w":1.4,"h":1.4,"r":180,"g":"WRC"},{"t":"track","x":104.93,"y":14.4,"w":1.4,"h":1.4,"r":180,"g":"WRC"},{"t":"track","x":104.93,"y":13,"w":1.4,"h":1.4,"r":180,"g":"WRC"},{"t":"track","x":104.93,"y":11.6,"w":1.4,"h":1.4,"r":180,"g":"WRC"},{"t":"box","x":100.63,"y":6.3,"w":1,"h":1.6,"l":"Cassa gomme","g":"WRC"},{"t":"wbench","x":102.83,"y":8.2,"w":2.1,"h":1,"r":180,"l":"Banchi uscita","g":"WRC"},{"t":"wbench","x":102.83,"y":6.2,"w":2.1,"h":1,"r":180,"g":"WRC"},{"t":"operator","x":104.73,"y":8.2,"w":0.8,"h":0.8,"g":"WRC"},{"t":"operator","x":101.13,"y":6.2,"w":0.8,"h":0.8,"r":180,"g":"WRC"},{"t":"zone","x":113.915,"y":10.725,"w":12.17,"h":12.15,"l":"Sub assy front module","f":"blu","g":"FrontM"},{"t":"sign","x":114.33,"y":10.6,"w":3.6,"h":0.1,"l":"SUB ASSY FRONT MODULE","g":"FrontM"},{"t":"tbench","x":108.63,"y":9.05,"w":0.7,"h":1.4,"r":180,"l":"S33A","g":"FrontM"},{"t":"operator","x":109.48,"y":9.05,"w":0.8,"h":0.8,"r":180,"g":"FrontM"},{"t":"tbench","x":108.63,"y":10.5,"w":0.7,"h":1.4,"r":180,"l":"S33B","g":"FrontM"},{"t":"operator","x":109.48,"y":10.5,"w":0.8,"h":0.8,"r":180,"g":"FrontM"},{"t":"tbench","x":108.63,"y":11.95,"w":0.7,"h":1.4,"r":180,"l":"S33C","g":"FrontM"},{"t":"operator","x":109.48,"y":11.95,"w":0.8,"h":0.8,"r":180,"g":"FrontM"},{"t":"tbench","x":108.63,"y":13.4,"w":0.7,"h":1.4,"r":180,"l":"S33D","g":"FrontM"},{"t":"operator","x":109.48,"y":13.4,"w":0.8,"h":0.8,"r":180,"g":"FrontM"},{"t":"box","x":109.55,"y":14.53,"w":1.3,"h":0.5,"l":"Manubri WIP","g":"FrontM"},{"t":"box","x":108.68,"y":15.8,"w":1.3,"h":0.45,"l":"Manubri finito","g":"FrontM"},{"t":"box","x":108.68,"y":16.25,"w":1.3,"h":0.4,"g":"FrontM"},{"t":"box","x":110.38,"y":8.1,"w":0.85,"h":0.7,"g":"FrontM"},{"t":"box","x":110.38,"y":8.9,"w":0.85,"h":0.6,"g":"FrontM"},{"t":"box","x":110.38,"y":10.5,"w":0.85,"h":1.4,"g":"FrontM"},{"t":"box","x":110.38,"y":12.8,"w":0.85,"h":0.75,"g":"FrontM"},{"t":"box","x":110.38,"y":13.5,"w":0.85,"h":0.65,"g":"FrontM"},{"t":"box","x":111.03,"y":6.53,"w":1.1,"h":1.25,"l":"Minuteria","g":"FrontM"},{"t":"box","x":112.39,"y":7.75,"w":1.25,"h":1.6,"g":"FrontM"},{"t":"box","x":112.22,"y":11.38,"w":1.25,"h":0.85,"l":"Minuteria","g":"FrontM"},{"t":"box","x":112.22,"y":12.35,"w":1.25,"h":0.85,"g":"FrontM"},{"t":"box","x":112.43,"y":14.2,"w":0.8,"h":2.2,"l":"Handle comp","g":"FrontM"},{"t":"bench","x":112.58,"y":5.35,"w":0.8,"h":0.6,"r":180,"l":"Bench","g":"FrontM"},{"t":"operator","x":111.93,"y":5.9,"w":0.8,"h":0.8,"r":180,"g":"FrontM"},{"t":"fmline","x":113.4,"y":10.6,"w":0.7,"h":10,"l":"Minilinea front module","g":"FrontM"},{"t":"press","x":115.23,"y":8.12,"w":1.5,"h":0.9,"l":"Pressa","g":"FrontM"},{"t":"operator","x":115.23,"y":7.25,"w":0.8,"h":0.8,"r":270,"g":"FrontM"},{"t":"box","x":114.95,"y":5.38,"w":1.25,"h":1.25,"l":"Fork assy","g":"FrontM"},{"t":"box","x":116.15,"y":6.23,"w":0.65,"h":0.75,"g":"FrontM"},{"t":"box","x":116.83,"y":7.8,"w":1.45,"h":1.05,"l":"Piantone","g":"FrontM"},{"t":"box","x":114.53,"y":9.84,"w":1.5,"h":1.55,"l":"Parafango WIP","g":"FrontM"},{"t":"box","x":116.88,"y":9.84,"w":1.95,"h":1.55,"l":"Parafango","g":"FrontM"},{"t":"pcart","x":115.3,"y":12.35,"w":1.4,"h":1.1,"r":180,"g":"FrontM"},{"t":"pcart","x":116.86,"y":12.35,"w":1.4,"h":1.1,"r":180,"g":"FrontM"},{"t":"operator","x":114.03,"y":8.85,"w":0.8,"h":0.8,"g":"FrontM"},{"t":"operator","x":114.03,"y":10.9,"w":0.8,"h":0.8,"g":"FrontM"},{"t":"operator","x":114.03,"y":12.9,"w":0.8,"h":0.8,"g":"FrontM"},{"t":"operator","x":114.08,"y":15.2,"w":0.8,"h":0.8,"g":"FrontM"},{"t":"redrack","x":114.88,"y":15.8,"w":1.9,"h":1.2,"r":180,"l":"Front module WIP","g":"FrontM"},{"t":"redrack","x":117.19,"y":15.65,"w":1.3,"h":1.8,"r":180,"l":"Finished front module","g":"FrontM"},{"t":"zone","x":121,"y":10.725,"w":2,"h":12.15,"f":"verde","g":"Logistica"},{"t":"zone","x":74.5,"y":20.05,"w":148,"h":1.5,"f":"pedonale","g":"Logistica"},{"t":"zone","x":74.5,"y":18.05,"w":148,"h":2.5,"l":"Corsia muletti","f":"verde","g":"Logistica"},{"t":"zone","x":74.5,"y":33.2,"w":148,"h":0.8,"f":"pedonale","g":"Logistica"},{"t":"zone","x":74.5,"y":35.35,"w":148,"h":3.5,"l":"Corsia muletti e AGV","f":"verde","g":"Logistica"},{"t":"zone","x":87.625,"y":51.37,"w":121.75,"h":7.86,"l":"Corsia AGV e muletti","f":"verde","g":"Logistica"},{"t":"zone","x":87.625,"y":44.09,"w":121.75,"h":13.3,"f":"bianco","g":"Logistica"},{"t":"zone","x":13.225,"y":78.95,"w":26.45,"h":46.7,"l":"Oltre il muro FAZ (fuori area)","f":"grigio","g":"Struttura"},{"t":"oven","x":87.625,"y":55.45,"w":121.75,"h":0.3,"g":"Struttura"},{"t":"column","x":148.01,"y":37.3,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":136.01,"y":37.3,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":124.01,"y":37.3,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":112.01,"y":37.3,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":100.01,"y":37.3,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":88.01,"y":37.3,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":76.01,"y":37.3,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":64.01,"y":37.3,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":52.01,"y":37.3,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":40.01,"y":37.3,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":28.01,"y":37.3,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":16.01,"y":37.3,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":4.01,"y":37.3,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":148.01,"y":0.3,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":148.01,"y":19.1,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":148.01,"y":55.45,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":148.01,"y":102,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":136.01,"y":0.3,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":136.01,"y":19.1,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":136.01,"y":55.45,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":136.01,"y":102,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":124.01,"y":0.3,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":124.01,"y":19.1,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":124.01,"y":55.45,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":124.01,"y":102,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":112.01,"y":0.3,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":112.01,"y":19.1,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":112.01,"y":55.45,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":112.01,"y":102,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":100.01,"y":0.3,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":100.01,"y":19.1,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":100.01,"y":55.45,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":100.01,"y":102,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":88.01,"y":0.3,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":88.01,"y":19.1,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":88.01,"y":55.45,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":88.01,"y":102,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":76.01,"y":0.3,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":76.01,"y":19.1,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":76.01,"y":55.45,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":76.01,"y":102,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":64.01,"y":0.3,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":64.01,"y":19.1,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":64.01,"y":55.45,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":64.01,"y":102,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":52.01,"y":0.3,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":52.01,"y":19.1,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":52.01,"y":55.45,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":52.01,"y":102,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":40.01,"y":0.3,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":40.01,"y":19.1,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":40.01,"y":55.45,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":40.01,"y":102,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":28.01,"y":0.3,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":28.01,"y":19.1,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":28.01,"y":55.45,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":28.01,"y":102,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":16.01,"y":0.3,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":16.01,"y":19.1,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":16.01,"y":102,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":4.01,"y":0.3,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":4.01,"y":19.1,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"column","x":4.01,"y":102,"w":0.4,"h":0.4,"g":"Struttura"},{"t":"fcart","x":98.71,"y":38.84,"w":2,"h":0.9,"l":"Carrello telai \u00b7 INDEVA","g":"L1","m":1},{"t":"manip","x":96.31,"y":45.04,"w":0.8,"h":0.8,"l":"Manipolatore RHS 1 \u00b7 motore","st":1,"g":"L1","m":1},{"t":"manip","x":87.31,"y":39.84,"w":0.8,"h":0.8,"l":"Manipolatore RHS 2 \u00b7 ruota e forcella","st":4,"g":"L1","m":1},{"t":"fcart","x":104.71,"y":44.64,"w":2,"h":0.9,"l":"Carrello telai pressati","g":"SubF","m":1}];
+const BW=149,BH=102.3;            /* edificio dal V35 */
+const L1START_V35=99.71;          /* inizio postazione L1-01 nel V35 (prima del ribaltamento) */
+
+/* ====== parametri ====== */
+const DEF={
+  x0:6.45,   /* inizio AGV = fine dell'area banco prova attuale (34,35 − 8 scarico − 1,5 pedonale − 18,4 banco prova) */
+  yL:29.3, nIn:2, nA:15, pA:3, agL:2.5, agW:1.15,
+  gapT:3.6, nT:28, pT:2.4, beltW:1.1,
+  nE:10, pE:3, offE:6.5, nRet:3,
+  scar:8, ped:1.5, dBP:10, bpL:8.5, bpW:5.2,
+  ripL:10, ripY0:3, ripY1:16.8,
+  yF:42.44, sub2gap:2, zA:5, zAh:10, mA_w:2.5, mA_l:4, z1:6.3, z2:6.3, zh:10, mW:2.3, mL:4,
+  vinL:8.4, vinW:5.74, vinOff:0, cart1:3, cartN:9
+};
+const PDEF=[
+ ['Linea AGV (tapparella)',[['x0','Inizio AGV, x (m)',.05],['nIn','AGV in ingresso',1],['nA','Postazioni AGV',1],['pA','Passo AGV (m)',.1],['agL','Lunghezza AGV (m)',.05],['agW','Larghezza AGV (m)',.05],['yL','Asse linea, y (m)',.05]]],
+ ['Appendice engine module',[['nE','AGV engine module',1],['pE','Passo (m)',.1],['offE','Distanza assi dalla linea (m)',.1],['nRet','AGV di ritorno in alto',1]]],
+ ['Tapparella',[['gapT','Fine AGV → inizio tapparella (m)',.1],['nT','Postazioni',1],['pT','Passo (m)',.1],['beltW','Larghezza nastro (m)',.05]]],
+ ['Fine linea',[['scar','Zona scarico (m)',.1],['ped','Pedonale (m)',.1],['dBP','Uscita moto → banchi prova (m)',.1],['bpL','Banco prova, lunghezza (m)',.1],['bpW','Banco prova, larghezza (m)',.1],['ripL','Riparazioni, lunghezza (m)',.1]]],
+ ['FAZ e nuove aree',[['yF','Asse FAZ, y (m)',.05],['sub2gap','Ultima postazione → area A (m)',.1],['zA','Area A, lunghezza (m)',.1],['zAh','Area A, larghezza (m)',.1],['mA_w','Macchina A, larghezza (m)',.1],['mA_l','Macchina A, lunghezza (m)',.1],['z1','Area 1 (inizio L1), lunghezza (m)',.1],['z2','Area 2, lunghezza (m)',.1],['zh','Aree 1-2, larghezza (m)',.1],['mW','Macchina 1-2, larghezza (m)',.1],['mL','Macchina 1-2, lunghezza (m)',.1]]],
+ ['VIN machine',[['vinL','Lunghezza (m)',.01],['vinW','Larghezza (m)',.01],['vinOff','Sfasamento da inizio 3° AGV (m)',.1],['cart1','Zona 2 carrelli → VIN (m)',.1],['cartN','Zona stock carrelli (m)',.1]]]
+];
+const LAYERS=[
+ ['EDIFICIO','Edificio',8,'#7b858a'],['COLONNE','Colonne',8,'#59636a'],['CORSIE','Corsie',9,'#b7bfbd'],
+ ['SUBASSY','Sub-assy esistenti',5,'#3a6fb5'],['FAZ','FAZ line',4,'#1a9aa8'],
+ ['AGV_LINEA','AGV linea',3,'#2e9a4c'],['AGV_ENGINE','AGV engine module',30,'#d9822b'],['AGV_RITORNO','AGV ritorno',6,'#b0399b'],
+ ['TAPPARELLA','Tapparella',1,'#c8323a'],['VIN','VIN machine',2,'#c99a12'],['AREE_NUOVE','Aree nuove FAZ',6,'#8a4fc4'],
+ ['CARRELLI','Carrelli telai',40,'#d06a12'],['FINE_LINEA','Scarico e riparazioni',1,'#a8323a'],['BANCHI_PROVA','Banchi prova',1,'#7a2328'],
+ ['OPERATORI','Operatori',7,'#30383d'],['QUOTE','Quote',2,'#c09000'],['TESTI','Testi',7,'#20272b']
+];
+const LC=Object.fromEntries(LAYERS.map(l=>[l[0],l]));
+let P=Object.assign({},DEF),VIS=Object.fromEntries(LAYERS.map(l=>[l[0],true]));
+try{const s=JSON.parse(localStorage.getItem('revline104-p')||'null');if(s)Object.assign(P,s);}catch(e){}
+try{const v=JSON.parse(localStorage.getItem('revline104-v')||'null');if(v)Object.assign(VIS,v);}catch(e){}
+
+/* ====== primitive ======
+   poly: {k:'poly',pts,closed,ly,fill,w(spessore),dash}  circle: {k:'c',x,y,r,ly,fill}  text: {k:'t',x,y,s,ly,rot,a,txt,b} */
+let G=[],SUM=null;
+const PL=(pts,ly,o={})=>G.push(Object.assign({k:'poly',pts,closed:false,ly},o));
+const PG=(pts,ly,o={})=>G.push(Object.assign({k:'poly',pts,closed:true,ly},o));
+const CI=(x,y,r,ly,o={})=>G.push(Object.assign({k:'c',x,y,r,ly},o));
+const TX=(x,y,txt,s,ly,o={})=>{if(txt)G.push(Object.assign({k:'t',x,y,txt:String(txt),s,ly,rot:0,a:'m'},o));};
+const RAD=Math.PI/180;
+function rectPts(cx,cy,w,h,r=0){const c=Math.cos(r*RAD),s=Math.sin(r*RAD);return[[-w/2,-h/2],[w/2,-h/2],[w/2,h/2],[-w/2,h/2]].map(([a,b])=>[cx+a*c-b*s,cy+a*s+b*c]);}
+const R=(cx,cy,w,h,ly,o={})=>PG(rectPts(cx,cy,w,h,o.r||0),ly,o);
+const RX=(x1,y1,x2,y2,ly,o={})=>R((x1+x2)/2,(y1+y2)/2,Math.abs(x2-x1),Math.abs(y2-y1),ly,o);
+/* trasformazione locale per disegni ruotati */
+function T(cx,cy,r){const c=Math.cos(r*RAD),s=Math.sin(r*RAD);return(a,b)=>[cx+a*c-b*s,cy+a*s+b*c];}
+function chamf(w,h,k){return[[-w/2+k,-h/2],[w/2-k,-h/2],[w/2,-h/2+k],[w/2,h/2-k],[w/2-k,h/2],[-w/2+k,h/2],[-w/2,h/2-k],[-w/2,-h/2+k]];}
+function arcPts(cx,cy,r,a0,a1,n=10){const o=[];for(let i=0;i<=n;i++){const a=(a0+(a1-a0)*i/n)*RAD;o.push([cx+r*Math.cos(a),cy+r*Math.sin(a)]);}return o;}
+const f2=v=>(+v).toFixed(2).replace('.',',');
+const f1=v=>(+v).toFixed(1).replace('.',',');
+
+/* ====== simboli ====== */
+function moto(cx,cy,r,ly,col){const t=T(cx,cy,r),m=p=>p.map(([a,b])=>t(a,b));
+  PG(m([[-1,-.09],[-.62,-.09],[-.62,.09],[-1,.09]]),ly,{fill:'#1d2226'});PG(m([[.62,-.08],[1,-.08],[1,.08],[.62,.08]]),ly,{fill:'#1d2226'});
+  PG(m([[-.62,-.12],[-.2,-.22],[.35,-.2],[.62,-.1],[.62,.1],[.35,.2],[-.2,.22],[-.62,.12]]),ly,{fill:col||'#d01f2a'});
+  PL(m([[.55,-.38],[.55,.38]]),ly,{w:.06});}
+function engine(cx,cy,r,ly){const t=T(cx,cy,r),m=p=>p.map(([a,b])=>t(a,b));PG(m(chamf(.7,.5,.08)),ly,{fill:'#4a5359'});PG(m(chamf(.35,.3,.05)),ly,{fill:'#7d878d'});}
+function agv(cx,cy,r,ly,load){const t=T(cx,cy,r),m=p=>p.map(([a,b])=>t(a,b)),L=P.agL,W=P.agW;
+  PG(m(chamf(L,W,.15)),ly,{fill:'#eef1f2',w:.04});PG(m([[-L/2+.12,-W*.3],[L/2-.12,-W*.3],[L/2-.12,W*.3],[-L/2+.12,W*.3]]),ly,{fill:'#c3cbcf'});
+  PG(m([[L/2-.02,-.16],[L/2+.18,0],[L/2-.02,.16]]),ly,{fill:LC[ly][3]});
+  if(load==='moto')moto(cx,cy,r,ly);else if(load==='engine')engine(cx,cy,r,ly);}
+function op(x,y,ly='OPERATORI'){CI(x,y,.28,ly,{fill:'#5e6a71'});CI(x,y,.13,ly,{fill:'#e8c9a7'});}
+function dyn(cx,cy,w,h,ly){R(cx,cy,w,h,ly,{fill:'#e8eaea'});R(cx,cy,w*.6,h*.62,ly,{fill:'#9aa4a9'});[-1,1].forEach(s=>R(cx+s*w*.14,cy,.5,h*.5,ly,{fill:'#30383d'}));}
+function hdim(x1,x2,y,txt,o={}){const ly='QUOTE',e=o.ext||[];PL([[x1,y],[x2,y]],ly,{w:.05});[x1,x2].forEach(x=>PL([[x-.25,y+.25],[x+.25,y-.25]],ly,{w:.07}));
+  e.forEach(([x,y0])=>PL([[x,y0],[x,y+(y>y0?.4:-.4)]],ly,{w:.025,dash:1}));TX((x1+x2)/2,y-.35,txt,o.s||.75,ly,{b:1});}
+function vdim(y1,y2,x,txt,o={}){const ly='QUOTE';PL([[x,y1],[x,y2]],ly,{w:.05});[y1,y2].forEach(y=>PL([[x-.25,y+.25],[x+.25,y-.25]],ly,{w:.07}));TX(x-.35,(y1+y2)/2,txt,o.s||.75,ly,{b:1,rot:-90});}
+function robot(cx,cy,base,arm,ly){const t=(a,b)=>[cx+a,cy+b];
+  /* basamento, giunto 1, braccio a 2 segmenti e polso: vista in pianta di un antropomorfo tipo cella gomme */
+  R(cx,cy,1.2,1.2,ly,{fill:'#5b6469'});CI(cx,cy,.48,ly,{fill:'#d9a521'});
+  const a1=base*RAD,a2=(base+arm)*RAD,j1=[cx+1.25*Math.cos(a1),cy+1.25*Math.sin(a1)],j2=[j1[0]+1.05*Math.cos(a2),j1[1]+1.05*Math.sin(a2)];
+  const seg=(p,q,w)=>{const dx=q[0]-p[0],dy=q[1]-p[1],L=Math.hypot(dx,dy),r=Math.atan2(dy,dx)/RAD;R((p[0]+q[0])/2,(p[1]+q[1])/2,L+w*.4,w,ly,{r,fill:'#e0b02a'});};
+  seg([cx,cy],j1,.42);seg(j1,j2,.3);CI(j1[0],j1[1],.24,ly,{fill:'#b88d14'});CI(j2[0],j2[1],.17,ly,{fill:'#40484d'});
+  return j2;}
+
+/* ====== generatore ====== */
+function build(){
+  G=[];const p=P,W=[],K={};
+  /* --- contesto V35 --- */
+  /* ribaltamento FAZ: la catena parte dalla VIN allineata all'inizio del 3° AGV */
+  const x1=p.x0+p.nIn*p.pA;                 /* inizio postazione A-01 */
+  const vin0=x1+p.vinOff, vin1=vin0+p.vinL, a2e=vin1+p.z2, a1e=a2e+p.z1, zAe=a1e+p.zA;
+  const s1=zAe+p.sub2gap+18;                /* nel V35 il 2° trasportatore sub-assy sta 18 m prima di L1-01 */
+  const M=s1+L1START_V35;
+  const dyF=p.yF-42.44,dyL=p.yL-29.3;
+  K.vin0=vin0;K.vin1=vin1;K.s1=s1;
+  /* edificio */
+  PG([[0,0],[BW,0],[BW,BH],[0,BH]],'EDIFICIO',{w:.25});
+  CTX.forEach(e=>{
+    let x=e.x,y=e.y,r=e.r||0;
+    if(e.m){x=M-e.x;r=(180-r+360)%360;y+=dyF;}
+    const lab=e.l||'';
+    switch(e.t){
+      case 'column':R(x,y,.5,.5,'COLONNE',{fill:'#59636a'});break;
+      case 'oven':R(x,y,e.w,e.h,e.l?'FAZ':'EDIFICIO',{r,fill:e.l?'rgba(140,150,150,.18)':'#7b858a'});if(e.l)TX(x,y,lab,.8,'TESTI');break;
+      case 'zone':{
+        const ly=e.m?'FAZ':(e.g==='Logistica'?'CORSIE':(e.g==='Struttura'?'EDIFICIO':'SUBASSY'));
+        if(e.f==='guida'){PL(rectPts(x,y,e.w,e.h,r).slice(0,2),ly,{w:.03});break;}
+        if(e.f==='pedonale'){R(x,y,e.w,e.h,'CORSIE',{r,fill:'rgba(80,90,95,.18)'});break;}
+        if(e.g==='Logistica'){R(x,y,e.w,e.h,'CORSIE',{r,fill:'rgba(120,130,130,.10)',dash:1,w:.03});if(lab)TX(x,y,lab,.7,'TESTI',{c:'#6b767b'});break;}
+        if(e.g==='Struttura'){R(x,y,e.w,e.h,'EDIFICIO',{r,fill:'rgba(120,130,130,.12)',dash:1});TX(x,y,lab,1.1,'TESTI',{c:'#6b767b'});break;}
+        R(x,y,e.w,e.h,ly,{r,dash:1,w:.05});if(lab&&e.w>4)TX(x-e.w/2+.4,y-e.h/2+.75,lab,.7,'TESTI',{a:'s',b:1});break;}
+      case 'station':{const ly='FAZ';PL([[x-e.w/2,y-3.6],[x-e.w/2,y+3.6]],ly,{w:.03,dash:1});TX(x,y-4.3,e.st,.55,'TESTI',{c:LC.FAZ[3]});
+        agv(x,y,(e.m?0:180),'FAZ','moto');op(x,y-1.25);op(x,y+1.25);break;}
+      case 'path':{const pts=(e.pts||[]).map(([a,b])=>[x+(e.m?-a:a),y+b]);PL(pts.concat([pts[0]]),'FAZ',{w:.08,c:'#1a9aa8',dash:1});if(lab)TX(x,y+e.h/2-.5,lab,.65,'TESTI',{c:LC.FAZ[3]});break;}
+      case 'gantry':R(x,y,e.w,e.h,'FAZ',{r,w:.03,dash:1});break;
+      case 'crane':R(x,y,e.w,e.h,'FAZ',{r,w:.06});PL(rectPts(x,y,e.w,e.h,r).filter((_,i)=>i%2==0),'FAZ',{w:.03,dash:1});break;
+      case 'mrail':{const pts=(e.pts||[]).map(([a,b])=>[x+(e.m?-a:a),y+b]);PL(pts,'FAZ',{w:.1});break;}
+      case 'operator':op(x,y);break;
+      case 'moto':moto(x,y,r,'FAZ');break;
+      case 'unload2':TX(x,y-3.6,lab,.6,'TESTI');break;
+      case 'locker':case 'modula':case 'pdca':R(x,y,e.w,e.h,'SUBASSY',{r,fill:'rgba(58,111,181,.10)'});if(lab)TX(x,y,lab,.6,'TESTI',{rot:e.h>e.w*2?-90:0});break;
+      case 'sign':TX(x,y,lab,.75,'TESTI',{b:1,c:LC.SUBASSY[3]});break;
+      case 'track':break;
+      default:{
+        const ly=e.m?'FAZ':'SUBASSY';
+        R(x,y,e.w,e.h,ly,{r,fill:e.m?'rgba(26,154,168,.10)':'rgba(58,111,181,.10)',w:.03});
+        if(lab&&(e.w>1.4||e.h>1.4)&&!/^Gomme|Stock/.test(lab))TX(x,y,lab,.45,'TESTI',{rot:e.h>e.w*1.6?-90:0});
+      }
+    }
+  });
+  /* FAZ: nome linea e verso */
+  TX(M-67.71,p.yF-5.6,'FAZ LINE  →  (ribaltata)',1,'TESTI',{b:1,c:LC.FAZ[3]});
+
+  /* --- LINEA AGV TAPPARELLA --- */
+  const yL=p.yL,yA=yL-p.offE,x2=x1+p.nA*p.pA,xc=x2+p.gapT/2,xt0=x2+p.gapT,xt1=xt0+p.nT*p.pT,xb=p.x0-1.5,rc=1.4;
+  Object.assign(K,{x1,x2,xc,xt0,xt1,yA});
+  /* guida AGV (anello): linea +x, risalita in alto, appendice −x, discesa in basso */
+  const loop=[].concat([[xb+rc,yL]],[[xc-rc,yL]],arcPts(xc-rc,yL-rc,rc,90,0),[[xc,yA+rc]],arcPts(xc-rc,yA+rc,rc,0,-90),[[xb+rc,yA]],arcPts(xb+rc,yA+rc,rc,-90,-180),[[xb,yL-rc]],arcPts(xb+rc,yL-rc,rc,180,90));
+  PL(loop,'AGV_LINEA',{w:.12,c:'#2e9a4c',dash:1});
+  /* fasce di lavoro */
+  RX(x1,yL-2.6,x2,yL+2.6,'AGV_LINEA',{fill:'rgba(46,154,76,.07)',w:.05});
+  TX(x1+.3,yL-3.1,`LINEA AGV 104ki · ${p.nA} postazioni × ${f1(p.pA)} m`,.85,'TESTI',{a:'s',b:1,c:LC.AGV_LINEA[3]});
+  for(let i=0;i<p.nA;i++){const cx=x1+p.pA*(i+.5);PL([[x1+p.pA*i,yL-2.6],[x1+p.pA*i,yL+2.6]],'AGV_LINEA',{w:.03});
+    agv(cx,yL,0,'AGV_LINEA','moto');op(cx,yL-1.35);op(cx,yL+1.35);TX(cx,yL+2.15,'A-'+String(i+1).padStart(2,'0'),.5,'TESTI',{c:LC.AGV_LINEA[3],b:1});}
+  PL([[x2,yL-2.6],[x2,yL+2.6]],'AGV_LINEA',{w:.03});
+  /* AGV in ingresso (motore già montato) */
+  for(let i=0;i<p.nIn;i++){const cx=p.x0+p.pA*(i+.5);agv(cx,yL,0,'AGV_RITORNO','engine');TX(cx,yL+1.2,'IN '+(i+1),.45,'TESTI',{c:LC.AGV_RITORNO[3],b:1});}
+  /* appendice engine module: dal basso, gli AGV scendono (verso −x) mentre si costruisce il motore */
+  const xe0=p.x0,xe1=xe0+p.nE*p.pE;K.xe1=xe1;
+  RX(xe0,yA-2,xe1,yA+2,'AGV_ENGINE',{fill:'rgba(217,130,43,.08)',w:.05});
+  TX(xe0+.3,yA-2.45,`ENGINE MODULE su AGV · ${p.nE} postazioni (scendono ←)`,.8,'TESTI',{a:'s',b:1,c:LC.AGV_ENGINE[3]});
+  for(let i=0;i<p.nE;i++){const cx=xe1-p.pE*(i+.5);PL([[xe1-p.pE*i,yA-2],[xe1-p.pE*i,yA+2]],'AGV_ENGINE',{w:.03});
+    agv(cx,yA,180,'AGV_ENGINE','engine');op(cx,yA-1.3);op(cx,yA+1.3);TX(cx,yA+1.75,'E-'+String(i+1).padStart(2,'0'),.5,'TESTI',{c:LC.AGV_ENGINE[3],b:1});}
+  PL([[xe0,yA-2],[xe0,yA+2]],'AGV_ENGINE',{w:.03});
+  /* ritorno: AGV vuoti dalla fine linea alla testa dell'appendice */
+  const ret=[[xc,(yA+yL)/2,90]];for(let i=1;i<p.nRet;i++)ret.push([xc-rc-1.6-(i-1)*p.pA,yA,180]);
+  ret.forEach(([x,y,r],i)=>{agv(x,y,r,'AGV_RITORNO');TX(x,y+(r===90?0:1.2),'R'+(i+1),.45,'TESTI',{c:LC.AGV_RITORNO[3],b:1,dx:r===90?1:0});});
+  if(xc-rc-1.6-(p.nRet-1)*p.pA>xe1)TX((xe1+xc)/2,yA-1.1,'polmone / transito AGV vuoti',.6,'TESTI',{c:LC.AGV_RITORNO[3]});
+  [[ (x1+x2)/2,yL,0],[(xe0+xe1)/2,yA,180],[xc,(yA+yL)/2-1.6,-90],[xb,(yA+yL)/2,90]].forEach(([x,y,r])=>{const t=T(x,y,r);PG([t(.5,0),t(-.3,-.32),t(-.3,.32)],'AGV_LINEA',{fill:'#2e9a4c'});});
+  /* trasferimento AGV → tapparella */
+  RX(x2,yL-2.2,xt0,yL+2.2,'TAPPARELLA',{fill:'rgba(200,50,58,.06)',dash:1,w:.05});
+  TX((x2+xt0)/2,yL+3,'trasferimento',.5,'TESTI',{c:LC.TAPPARELLA[3]});TX((x2+xt0)/2,yL+3.6,'AGV → tapparella',.5,'TESTI',{c:LC.TAPPARELLA[3]});
+
+  /* --- TAPPARELLA (28 postazioni) --- */
+  RX(xt0,yL-p.beltW/2,xt1,yL+p.beltW/2,'TAPPARELLA',{fill:'#3a4247',w:.06});
+  for(let x=xt0+.3;x<xt1;x+=.6)PL([[x,yL-p.beltW/2+.05],[x,yL+p.beltW/2-.05]],'TAPPARELLA',{w:.015,c:'#6d777c'});
+  RX(xt0,yL-2.6,xt1,yL+2.6,'TAPPARELLA',{w:.05,dash:1});
+  TX(xt0+.3,yL-3.1,`TAPPARELLA · ${p.nT} postazioni × ${f1(p.pT)} m  →  uscita moto`,.85,'TESTI',{a:'s',b:1,c:LC.TAPPARELLA[3]});
+  for(let i=0;i<p.nT;i++){const cx=xt0+p.pT*(i+.5);PL([[xt0+p.pT*i,yL-2.6],[xt0+p.pT*i,yL+2.6]],'TAPPARELLA',{w:.03});
+    moto(cx,yL,0,'TAPPARELLA','#d01f2a');op(cx,yL-1.25);op(cx,yL+1.25);TX(cx,yL+2.15,'T-'+String(i+1).padStart(2,'0'),.48,'TESTI',{c:LC.TAPPARELLA[3],b:1});}
+  PL([[xt1,yL-2.6],[xt1,yL+2.6]],'TAPPARELLA',{w:.03});
+
+  /* --- FINE LINEA: scarico, riparazioni a sinistra, 4 banchi prova a dBP --- */
+  const xs1=xt1+p.scar;RX(xt1,yL-6,xs1,yL+3.5,'FINE_LINEA',{fill:'rgba(168,50,58,.05)',w:.05});
+  TX((xt1+xs1)/2,yL-5.2,'SCARICO MOTO',.75,'TESTI',{b:1,c:LC.FINE_LINEA[3]});
+  for(let i=0;i<6;i++){const x=xt1+1.4+i*1.05;R(x,yL-3.1,.95,2.25,'FINE_LINEA',{w:.05});moto(x,yL-3.1,90,'FINE_LINEA',i%2?'#22272b':'#d01f2a');}
+  op(xt1+.8,yL+1.4);
+  RX(xs1,yL-6,xs1+p.ped,yL+3.5,'CORSIE',{fill:'rgba(80,90,95,.18)'});
+  const xr0=xt1,xr1=xt1+p.ripL;RX(xr0,p.ripY0,xr1,p.ripY1,'FINE_LINEA',{fill:'rgba(168,50,58,.05)',w:.06});
+  TX((xr0+xr1)/2,p.ripY0+.9,'RIPARAZIONI',.85,'TESTI',{b:1,c:LC.FINE_LINEA[3]});
+  for(let r2=0;r2<2;r2++)for(let i=0;i<7;i++){const x=xr0+1.2+i*1.15;if(x>xr1-.6)continue;const y=p.ripY0+4+r2*3;R(x,y,.95,2.25,'FINE_LINEA',{w:.05});moto(x,y,90,'FINE_LINEA','#d01f2a');}
+  R(xr0+2.5,p.ripY1-2.2,2.87,.7,'FINE_LINEA',{fill:'#3a4248'});R(xr0+6,p.ripY1-2.2,2.87,.7,'FINE_LINEA',{fill:'#3a4248'});TX((xr0+xr1)/2,p.ripY1-1.2,'ponti sollevatori',.5,'TESTI');
+  const xbp=xt1+p.dBP;K.xbp=xbp;
+  const bp=(y,lab)=>{RX(xbp,y-p.bpW/2,xbp+p.bpL,y+p.bpW/2,'BANCHI_PROVA',{fill:'rgba(122,35,40,.07)',w:.06});dyn(xbp+p.bpL/2,y,5,3.2,'BANCHI_PROVA');TX(xbp+p.bpL/2,y-p.bpW/2+.6,lab,.6,'TESTI',{b:1,c:LC.BANCHI_PROVA[3]});};
+  bp(yL-.3-p.bpW-.2,'BANCO PROVA T1');bp(yL-.3,'BANCO PROVA T2');
+  bp(p.yF-p.bpW/2-.1,'BANCO PROVA F1 · FAZ');bp(p.yF+p.bpW/2+.1,'BANCO PROVA F2 · FAZ');
+  hdim(xt1,xbp,yL+5.4,`${f1(p.dBP)} m`,{ext:[[xt1,yL+2.6],[xbp,yL+3.3]]});
+
+  /* --- NUOVE AREE FAZ (in fila prima del sub-assy FAZ ribaltato) --- */
+  const zone=(xa,xb2,h,lab,dim,ly)=>{RX(xa,p.yF-h/2,xb2,p.yF+h/2,ly,{fill:'rgba(138,79,196,.06)',w:.07});TX((xa+xb2)/2,p.yF-h/2+.7,lab,.6,'TESTI',{b:1,c:LC[ly][3]});TX((xa+xb2)/2,p.yF-h/2+1.45,dim,.5,'TESTI',{c:LC[ly][3]});};
+  const machine=(cx,w,l,lab)=>{R(cx,p.yF,w,l,'AREE_NUOVE',{fill:'#eceeea',w:.05});R(cx,p.yF-l/2+.35,w-.2,.5,'AREE_NUOVE',{fill:'#b9c1c5'});R(cx+w/2-.35,p.yF,.4,l*.6,'AREE_NUOVE',{fill:'#d9dcd8'});
+    CI(cx+w/2-.35,p.yF-l*.2,.12,'AREE_NUOVE',{fill:'#c8323a'});TX(cx-.15,p.yF+.1,lab,.38,'TESTI',{rot:-90});op(cx-w/2-.5,p.yF+.6);};
+  zone(a1e,zAe,p.zAh,'AREA A',`${f1(p.zA)} × ${f1(p.zAh)} m`,'AREE_NUOVE');machine((a1e+zAe)/2,p.mA_w,p.mA_l,'Macchina A');
+  zone(a2e,a1e,p.zh,'AREA 1 · inizio L1',`${f1(p.z1)} × ${f1(p.zh)} m`,'AREE_NUOVE');machine((a2e+a1e)/2,p.mW,p.mL,`Macchina ${f1(p.mW)}×${f1(p.mL)}`);
+  zone(vin1,a2e,p.zh,'AREA 2',`${f1(p.z2)} × ${f1(p.zh)} m`,'AREE_NUOVE');machine((vin1+a2e)/2,p.mW,p.mL,`Macchina ${f1(p.mW)}×${f1(p.mL)}`);
+  hdim(zAe,zAe+p.sub2gap,p.yF+p.zAh/2+1.3,`${f1(p.sub2gap)} m`,{s:.6});
+
+  /* --- VIN MACHINE (cella con 2 robot) --- */
+  const vy0=p.yF-p.vinW/2,vy1=p.yF+p.vinW/2;
+  RX(vin0,vy0,vin1,vy1,'VIN',{fill:'rgba(201,154,18,.07)',w:.09});
+  /* recinzione con montanti, porta di accesso lato corsia */
+  for(let x=vin0;x<=vin1+1e-6;x+=p.vinL/6){R(x,vy0,.18,.18,'VIN',{fill:'#5b6469'});R(x,vy1,.18,.18,'VIN',{fill:'#5b6469'});}
+  for(let y=vy0;y<=vy1+1e-6;y+=p.vinW/4){R(vin0,y,.18,.18,'VIN',{fill:'#5b6469'});R(vin1,y,.18,.18,'VIN',{fill:'#5b6469'});}
+  PL([[vin0+p.vinL*.5,vy0],[vin0+p.vinL*.5+1,vy0-.8]],'VIN',{w:.04,dash:1});
+  /* nastro telai al centro, da sinistra (carrelli) a destra (aree FAZ) */
+  RX(vin0-.6,p.yF-.45,vin1+.6,p.yF+.45,'VIN',{fill:'#3a4247',w:.04});
+  for(let x=vin0-.4;x<vin1+.6;x+=.5)PL([[x,p.yF-.4],[x,p.yF+.4]],'VIN',{w:.012,c:'#6d777c'});
+  const fr=(cx)=>{const t=T(cx,p.yF,0),m=q=>q.map(([a,b])=>t(a,b));PL(m([[-1,0],[-.35,-.22],[.55,-.18],[.95,0],[.55,.18],[-.35,.22],[-1,0]]),'VIN',{w:.07,c:'#1d2226'});};
+  fr(vin0+p.vinL*.3);fr(vin0+p.vinL*.7);
+  const rb1=robot(vin0+p.vinL*.3,p.yF-1.85,65,40,'VIN'),rb2=robot(vin0+p.vinL*.7,p.yF+1.85,-115,40,'VIN');
+  R(vin1-1,vy0-.55,1.6,.7,'VIN',{fill:'#d9dcd8'});TX(vin1-1,vy0-.55,'quadro',.35,'TESTI');
+  R(vin1-.9,vy1+.6,1.2,.6,'VIN',{fill:'#d9dcd8'});TX(vin1-.9,vy1+.6,'HMI',.35,'TESTI');
+  TX((vin0+vin1)/2,vy0-1.25,'VIN MACHINE',1.05,'TESTI',{b:1,c:'#8a6a00'});
+  hdim(vin0,vin1,vy1+1.6,`${f2(p.vinL)} m`,{ext:[[vin0,vy1],[vin1,vy1]],s:.6});vdim(vy0,vy1,vin1+.7,`${f2(p.vinW)} m`,{s:.5});
+
+  /* --- CARRELLI TELAI --- */
+  const c2a=vin0-p.cart1,c1a=c2a-p.cartN;
+  RX(c2a,p.yF-2.4,vin0,p.yF+2.4,'CARRELLI',{dash:1,w:.05});RX(c1a,p.yF-4.6,c2a,p.yF+4.6,'CARRELLI',{dash:1,w:.05});
+  const cart=(x,y,r,lab)=>{R(x,y,2,.9,'CARRELLI',{r,fill:'rgba(208,106,18,.12)',w:.05});const t=T(x,y,r);PL([t(-.8,0),t(.8,0)],'CARRELLI',{w:.03});if(lab)TX(x,y,lab,.3,'TESTI',{rot:r});};
+  cart(c2a+p.cart1/2,p.yF-1.3,90,'telai');cart(c2a+p.cart1/2,p.yF+1.3,90,'telai');
+  TX(c2a+p.cart1/2,p.yF-3,'2 carrelli → VIN',.42,'TESTI',{b:1,c:LC.CARRELLI[3]});
+  const nC=Math.max(1,Math.floor((p.cartN-.4)/1.25));for(let r2=0;r2<3;r2++)for(let i=0;i<nC;i++){const x=c1a+.8+i*1.25;if(x>c2a-.6)continue;cart(x,p.yF-2.8+r2*2.8,90);}
+  TX(c1a+p.cartN/2,p.yF-5.1,'STOCK CARRELLI TELAI',.6,'TESTI',{b:1,c:LC.CARRELLI[3]});
+  op(c2a+p.cart1/2+.9,p.yF+3.2);
+  K.c1a=c1a;
+  /* --- quote principali --- */
+  hdim(p.x0,x1,yL+4.4,`${p.nIn} AGV · ${f1(x1-p.x0)} m`,{s:.55,ext:[[p.x0,yL+.6]]});
+  hdim(x1,x2,yL+4.4,`${p.nA} × ${f1(p.pA)} = ${f1(x2-x1)} m`,{ext:[[x1,yL+2.6],[x2,yL+2.6]]});
+  hdim(x2,xt0,yL+4.4,`${f1(p.gapT)} m`,{s:.6});
+  hdim(xt0,xt1,yL+4.4,`${p.nT} × ${f1(p.pT)} = ${f1(xt1-xt0)} m`,{ext:[[xt1,yL+2.6]]});
+  vdim(yA,yL,xb-1.4,`${f1(p.offE)} m`,{s:.55});
+  hdim(xe0,xe1,yA-3.9,`${p.nE} × ${f1(p.pE)} = ${f1(xe1-xe0)} m`,{s:.6});
+  /* allineamento VIN ↔ inizio 3° AGV */
+  PL([[x1,yL+2.6],[x1,vy0]],'QUOTE',{w:.03,dash:1});TX(x1+.2,(yL+vy0)/2+3.4,`inizio ${p.nIn+1}° AGV = inizio VIN`,.5,'QUOTE',{a:'s',rot:-90});
+
+  /* --- verifiche --- */
+  if(c1a<0)W.push(`I carrelli telai escono dall'edificio di ${f2(-c1a)} m (x = ${f2(c1a)}).`);
+  if(xbp+p.bpL>BW)W.push(`I banchi prova escono dall'edificio di ${f2(xbp+p.bpL-BW)} m.`);
+  if(xb-rc-P.agL/2<0)W.push(`La curva AGV in basso esce dall'edificio.`);
+  const fazEnd=M-27.51;K.fazEnd=fazEnd;if(fazEnd>xbp-1)W.push(`Lo scarico FAZ arriva fino a x = ${f2(fazEnd)}, troppo vicino ai banchi prova.`);
+  if(xr1>BW)W.push('Le riparazioni escono dall\'edificio.');
+  K.M=M;K.W=W;K.xs1=xs1;K.xr1=xr1;
+  SUM=K;
+}
+
+/* ====== render SVG ====== */
+const svg=document.getElementById('svg');
+let vb={x:-3,y:-3,w:BW+6,h:BH+6};
+function esc(s){return s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function toSVG(forExport){
+  const out=[],dark=!forExport&&getComputedStyle(document.documentElement).getPropertyValue('--paper').trim()==='#101314';
+  for(const g of G){if(!VIS[g.ly])continue;const L=LC[g.ly],col=g.c||L[3];
+    if(g.k==='poly'){const d=g.pts.map(p=>p[0].toFixed(3)+','+p[1].toFixed(3)).join(' ');
+      out.push(`<${g.closed?'polygon':'polyline'} points="${d}" fill="${g.closed&&g.fill?g.fill:'none'}" stroke="${col}" stroke-width="${g.w||.04}"${g.dash?' stroke-dasharray=".35 .2"':''}/>`);}
+    else if(g.k==='c')out.push(`<circle cx="${g.x.toFixed(3)}" cy="${g.y.toFixed(3)}" r="${g.r}" fill="${g.fill||'none'}" stroke="${col}" stroke-width=".03"/>`);
+    else if(g.k==='t'){const an=g.a==='s'?'start':g.a==='e'?'end':'middle',tc=g.c||(dark?'#e6e9ea':'#20272b');
+      out.push(`<text x="${(g.x+(g.dx||0)).toFixed(3)}" y="${g.y.toFixed(3)}" font-size="${g.s}" text-anchor="${an}" dominant-baseline="central"${g.b?' font-weight="600"':''} fill="${tc}"${g.rot?` transform="rotate(${g.rot} ${(g.x+(g.dx||0)).toFixed(3)} ${g.y.toFixed(3)})"`:''}>${esc(g.txt)}</text>`);}
+  }
+  return out.join('');
+}
+function draw(){svg.setAttribute('viewBox',`${vb.x} ${vb.y} ${vb.w} ${vb.h}`);svg.innerHTML=`<g font-family="system-ui,Segoe UI,Roboto,sans-serif">${toSVG(false)}</g>`;}
+function fit(){const r=svg.getBoundingClientRect(),a=r.width/r.height,w=BW+6,h=BH+6;if(w/h>a){vb={x:-3,y:-3-(w/a-h)/2,w,h:w/a};}else{vb={x:-3-(h*a-w)/2,y:-3,w:h*a,h};}draw();}
+function toWorld(cx,cy){const r=svg.getBoundingClientRect();return[vb.x+(cx-r.left)/r.width*vb.w,vb.y+(cy-r.top)/r.height*vb.h];}
+svg.addEventListener('wheel',ev=>{ev.preventDefault();const[wx,wy]=toWorld(ev.clientX,ev.clientY),k=Math.exp(ev.deltaY*.0015);
+  vb.w*=k;vb.h*=k;vb.x=wx-(wx-vb.x)*k;vb.y=wy-(wy-vb.y)*k;svg.setAttribute('viewBox',`${vb.x} ${vb.y} ${vb.w} ${vb.h}`);},{passive:false});
+const ptr=new Map();let pinch=null;
+svg.addEventListener('pointerdown',ev=>{svg.setPointerCapture(ev.pointerId);ptr.set(ev.pointerId,[ev.clientX,ev.clientY]);svg.classList.add('drag');if(ptr.size===2){const[a,b]=[...ptr.values()];pinch={d:Math.hypot(a[0]-b[0],a[1]-b[1]),vb:{...vb},c:toWorld((a[0]+b[0])/2,(a[1]+b[1])/2)};}});
+svg.addEventListener('pointermove',ev=>{const[wx,wy]=toWorld(ev.clientX,ev.clientY);document.getElementById('hud').textContent=`x ${f2(wx)} m · y ${f2(wy)} m`;
+  if(!ptr.has(ev.pointerId))return;const pr=ptr.get(ev.pointerId);ptr.set(ev.pointerId,[ev.clientX,ev.clientY]);const r=svg.getBoundingClientRect();
+  if(ptr.size===1){vb.x-=(ev.clientX-pr[0])/r.width*vb.w;vb.y-=(ev.clientY-pr[1])/r.height*vb.h;}
+  else if(ptr.size===2&&pinch){const[a,b]=[...ptr.values()],k=pinch.d/Math.max(1,Math.hypot(a[0]-b[0],a[1]-b[1]));vb.w=pinch.vb.w*k;vb.h=pinch.vb.h*k;vb.x=pinch.c[0]-(pinch.c[0]-pinch.vb.x)*k;vb.y=pinch.c[1]-(pinch.c[1]-pinch.vb.y)*k;}
+  svg.setAttribute('viewBox',`${vb.x} ${vb.y} ${vb.w} ${vb.h}`);});
+const up=ev=>{ptr.delete(ev.pointerId);if(ptr.size<2)pinch=null;if(!ptr.size)svg.classList.remove('drag');};
+svg.addEventListener('pointerup',up);svg.addEventListener('pointercancel',up);
+
+/* ====== DXF (AutoCAD R12 ASCII, metri, y verso l'alto) ====== */
+function dxf(){
+  const o=[],add=(c,v)=>{o.push(c,v);},num=v=>(+v).toFixed(4),Y=y=>BH-y;
+  add(0,'SECTION');add(2,'HEADER');add(9,'$ACADVER');add(1,'AC1009');add(9,'$DWGCODEPAGE');add(3,'ANSI_1252');add(9,'$INSUNITS');add(70,6);
+  add(9,'$EXTMIN');add(10,0);add(20,0);add(30,0);add(9,'$EXTMAX');add(10,BW);add(20,BH);add(30,0);add(0,'ENDSEC');
+  add(0,'SECTION');add(2,'TABLES');
+  add(0,'TABLE');add(2,'LTYPE');add(70,2);
+  add(0,'LTYPE');add(2,'CONTINUOUS');add(70,0);add(3,'Solid line');add(72,65);add(73,0);add(40,0);
+  add(0,'LTYPE');add(2,'DASHED');add(70,0);add(3,'__ __ __');add(72,65);add(73,2);add(40,.55);add(49,.35);add(49,-.2);
+  add(0,'ENDTAB');
+  add(0,'TABLE');add(2,'LAYER');add(70,LAYERS.length);
+  LAYERS.forEach(l=>{add(0,'LAYER');add(2,l[0]);add(70,0);add(62,l[2]);add(6,'CONTINUOUS');});add(0,'ENDTAB');
+  add(0,'TABLE');add(2,'STYLE');add(70,1);add(0,'STYLE');add(2,'STANDARD');add(70,0);add(40,0);add(41,1);add(50,0);add(71,0);add(42,1);add(3,'txt');add(4,'');add(0,'ENDTAB');
+  add(0,'ENDSEC');
+  add(0,'SECTION');add(2,'ENTITIES');
+  for(const g of G){if(!VIS[g.ly])continue;
+    if(g.k==='poly'){add(0,'POLYLINE');add(8,g.ly);if(g.dash)add(6,'DASHED');add(66,1);add(10,0);add(20,0);add(30,0);add(70,g.closed?1:0);
+      g.pts.forEach(p=>{add(0,'VERTEX');add(8,g.ly);add(10,num(p[0]));add(20,num(Y(p[1])));add(30,0);});add(0,'SEQEND');add(8,g.ly);}
+    else if(g.k==='c'){add(0,'CIRCLE');add(8,g.ly);add(10,num(g.x));add(20,num(Y(g.y)));add(30,0);add(40,num(g.r));}
+    else if(g.k==='t'){const x=g.x+(g.dx||0),y=Y(g.y),h=g.s*.72,ha=g.a==='s'?0:g.a==='e'?2:1;
+      add(0,'TEXT');add(8,g.ly);add(10,num(x));add(20,num(y));add(30,0);add(40,num(h));add(1,g.txt.replace(/→/g,'->').replace(/←/g,'<-').replace(/×/g,'x').replace(/[·−–]/g,'-').replace(/°/g,'%%d').normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^\x20-\x7e]/g,'?'));
+      if(g.rot)add(50,num(-g.rot));add(72,ha);add(11,num(x));add(21,num(y));add(31,0);add(73,2);}
+  }
+  add(0,'ENDSEC');add(0,'EOF');
+  return o.join('\r\n')+'\r\n';
+}
+function download(name,txt,type){const b=new Blob([txt],{type}),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},500);}
+document.getElementById('bDxf').onclick=()=>download('Reverse_Line_104ki.dxf',dxf(),'application/dxf');
+document.getElementById('bSvg').onclick=()=>download('Reverse_Line_104ki.svg',`<svg xmlns="http://www.w3.org/2000/svg" viewBox="-3 -3 ${BW+6} ${BH+6}" width="${(BW+6)*10}mm" height="${(BH+6)*10}mm"><rect x="-3" y="-3" width="${BW+6}" height="${BH+6}" fill="#fff"/><g font-family="Arial,sans-serif">${toSVG(true)}</g></svg>`,'image/svg+xml');
+
+/* ====== pannello ====== */
+function save(){try{localStorage.setItem('revline104-p',JSON.stringify(P));localStorage.setItem('revline104-v',JSON.stringify(VIS));}catch(e){}}
+function panel(){
+  document.getElementById('params').innerHTML=PDEF.map(([t,rows])=>`<details><summary>${t}</summary>${rows.map(([k,l,st])=>`<div class="row"><label for="p_${k}">${l}</label><input id="p_${k}" data-k="${k}" type="number" step="${st}" value="${P[k]}"></div>`).join('')}</details>`).join('');
+  document.querySelectorAll('#params input').forEach(i=>i.addEventListener('input',()=>{const v=parseFloat(i.value);if(isFinite(v)){P[i.dataset.k]=v;save();update();}}));
+  document.getElementById('layers').innerHTML=LAYERS.map(l=>`<label><input type="checkbox" data-l="${l[0]}"${VIS[l[0]]?' checked':''}><span class="sw" style="background:${l[3]}"></span>${l[1]}</label>`).join('');
+  document.querySelectorAll('#layers input').forEach(i=>i.addEventListener('change',()=>{VIS[i.dataset.l]=i.checked;save();draw();}));
+}
+function summary(){const K=SUM,p=P,tot=p.nA+p.nE+p.nRet+p.nIn;
+  const rows=[['AGV in linea (postazioni)',p.nA],['AGV engine module (appendice)',p.nE],['AGV ritorno + ingresso',`${p.nRet} + ${p.nIn}`],['AGV totali',tot],
+    ['Inizio AGV',`x ${f2(p.x0)}`],['Inizio postazione A-01 / VIN',`x ${f2(K.x1)}`],['Fine linea AGV',`x ${f2(K.x2)}`],['Inizio tapparella',`x ${f2(K.xt0)}`],['Uscita moto (fine tapparella)',`x ${f2(K.xt1)}`],
+    ['Lunghezza tapparella',`${f2(K.xt1-K.xt0)} m`],['Banchi prova da',`x ${f2(K.xbp)}`],['VIN machine',`x ${f2(K.vin0)} → ${f2(K.vin1)}`],['Inizio L1-01 FAZ',`x ${f2(K.s1)}`],['Fine scarico FAZ',`x ${f2(K.fazEnd)}`],['Inizio stock carrelli',`x ${f2(K.c1a)}`]];
+  document.getElementById('sum').innerHTML=`<table>${rows.map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td></tr>`).join('')}</table>`+(K.W.length?K.W.map(w=>`<div class="warn">⚠ ${w}</div>`).join(''):'<div class="okm">Tutto dentro l\'edificio (149 × 102,3 m).</div>');}
+function update(){build();summary();draw();}
+document.getElementById('bReset').onclick=()=>{P=Object.assign({},DEF);save();panel();update();};
+document.getElementById('bFit').onclick=fit;
+document.getElementById('bTheme').onclick=()=>{const r=document.documentElement,cur=r.dataset.theme||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');r.dataset.theme=cur==='dark'?'light':'dark';try{localStorage.setItem('revline104-t',r.dataset.theme);}catch(e){}draw();};
+try{const t=localStorage.getItem('revline104-t');if(t)document.documentElement.dataset.theme=t;}catch(e){}
+window.addEventListener('resize',()=>{const r=svg.getBoundingClientRect();vb.h=vb.w*r.height/Math.max(1,r.width);draw();});
+panel();build();summary();fit();
+</script>
+</body>
+</html>
